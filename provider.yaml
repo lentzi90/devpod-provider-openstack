@@ -1,0 +1,68 @@
+name: openstack
+version: v0.0.1
+description: Devpod provider for OpenStack
+icon: https://object-storage-ca-ymq-1.vexxhost.net/swift/v1/6e4619c416ff4bd19e1c087f27a43eea/www-images-prod/openstack-logo/OpenStack-Logo-Mark.png
+options:
+  # Options for the provider, DevPod will pass these as
+  # ENV Variables when calling the provider
+  OS_CLOUD:
+    description: "The cloud to use from clouds.yaml"
+    required: true
+  NETWORK:
+    description: "The network ID to connect the server to"
+    required: true
+  FLAVOR:
+    description: "The openstack flavor to use"
+    default: c4m4
+    required: false
+  IMAGE:
+    description: "The image to create the server from"
+    default: Ubuntu-24.04
+    required: false
+  KEY_PAIR:
+    description: "Name of the key pair to inject in the server"
+    required: false
+  VOLUME_SIZE:
+    description: "Boot volume size in GB."
+    default: "100"
+    required: false
+  JUMPHOST:
+    description: "Jumphost to connect through"
+    default: xerces-capo-jumphost
+    required: false
+  AGENT_PATH:
+    description: The path where to inject the DevPod agent to.
+    default: /opt/devpod/agent
+agent:
+  path: ${AGENT_PATH}
+exec:
+  command: ssh -J ${JUMPHOST} ubuntu@"$(openstack server show "${MACHINE_ID}" -f json | jq ".addresses.[].[0]" -r)" -- "${COMMAND}"
+  init: openstack versions show
+  create: |
+    openstack server create --image="${IMAGE}" --boot-from-volume="${VOLUME_SIZE}" \
+     --security-group=default --network="${NETWORK}" \
+     --key-name="${KEY_PAIR}" --flavor="${FLAVOR}" --wait "${MACHINE_ID}"
+  delete: |
+    volumes=$(openstack server show "${MACHINE_ID}" -f json | jq ".volumes_attached.[].id" -r)
+    openstack server delete "${MACHINE_ID}" --wait
+    openstack volume delete ${volumes}
+  start: openstack server start "${MACHINE_ID}"
+  stop: openstack server stop "${MACHINE_ID}"
+  status: |
+    status=$(openstack server show "${MACHINE_ID}" -f json | jq -r ".status")
+    if [[ -z "${status}" ]]; then
+      echo NotFound
+    else
+      case "${status}" in
+        "ACTIVE")
+          echo Running
+          ;;
+        "SHUTOFF")
+          echo Stopped
+          ;;
+        *)
+          echo Busy
+          ;;
+      esac
+    fi
+# binaries: # Optional binaries DevPod should download for this provider
