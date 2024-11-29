@@ -22,6 +22,10 @@ options:
   KEY_PAIR:
     description: "Name of the key pair to inject in the server"
     required: false
+  SSH_USER:
+    description: "User used for ssh to the machine."
+    default: ubuntu
+    required: false
   VOLUME_SIZE:
     description: "Boot volume size in GB."
     default: "100"
@@ -35,8 +39,10 @@ options:
     default: /opt/devpod/agent
 agent:
   path: ${AGENT_PATH}
+  docker:
+    install: true
 exec:
-  command: ssh -J ${JUMPHOST} ubuntu@"$(openstack server show "${MACHINE_ID}" -f json | jq ".addresses.[].[0]" -r)" -- "${COMMAND}"
+  command: ssh -J "${JUMPHOST}" "${SSH_USER}@$(openstack server show "${MACHINE_ID}" -f json | jq ".addresses.[].[0]" -r)" -- "${COMMAND}"
   init: openstack versions show
   create: |
     openstack server create --image="${IMAGE}" --boot-from-volume="${VOLUME_SIZE}" \
