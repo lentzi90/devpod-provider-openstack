@@ -15,6 +15,14 @@ options:
     description: "The openstack flavor to use"
     default: c4m4
     required: false
+    suggestions:
+    - c4m4
+    - c1m2-est
+    - c4m12-est
+    - c4m16-est
+    - c4m32-est
+    - c8m24-est
+    - c8m32-est
   IMAGE:
     description: "The image to create the server from"
     default: Ubuntu-24.04
@@ -27,8 +35,8 @@ options:
     default: ubuntu
     required: false
   VOLUME_SIZE:
-    description: "Boot volume size in GB."
-    default: "100"
+    description: "Boot volume size in GB. If not specified, no volume will be used."
+    example: "100"
     required: false
   JUMPHOST:
     description: "Jumphost to connect through"
@@ -41,17 +49,37 @@ agent:
   path: ${AGENT_PATH}
   docker:
     install: true
+  inactivityTimeout: 5m
+  exec:
+    shutdown: shutdown -h now
 exec:
-  command: ssh -J "${JUMPHOST}" "${SSH_USER}@$(openstack server show "${MACHINE_ID}" -f json | jq ".addresses.[].[0]" -r)" -- "${COMMAND}"
+  command: |
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        -J "${JUMPHOST}" \
+        "${SSH_USER}@$(openstack server show "${MACHINE_ID}" -f json | \
+        jq ".addresses.[].[0]" -r)" \
+        -- "${COMMAND}"
   init: openstack versions show
   create: |
-    openstack server create --image="${IMAGE}" --boot-from-volume="${VOLUME_SIZE}" \
-     --security-group=default --network="${NETWORK}" \
-     --key-name="${KEY_PAIR}" --flavor="${FLAVOR}" --wait "${MACHINE_ID}"
+    cmd=(openstack server create --image="${IMAGE}")
+    if [[ -n "${VOLUME_SIZE}" ]]; then
+      cmd+=(--boot-from-volume="${VOLUME_SIZE}")
+    fi
+    cmd+=(--security-group=default
+          --network="${NETWORK}"
+          --key-name="${KEY_PAIR}"
+          --flavor="${FLAVOR}"
+          --wait
+          "${MACHINE_ID}")
+    "${cmd[@]}"
   delete: |
-    volumes=$(openstack server show "${MACHINE_ID}" -f json | jq ".volumes_attached.[].id" -r)
+    if [[ -n "${VOLUME_SIZE}" ]]; then
+      volumes=$(openstack server show "${MACHINE_ID}" -f json | jq ".volumes_attached.[].id" -r)
+    fi
     openstack server delete "${MACHINE_ID}" --wait
-    openstack volume delete ${volumes}
+    if [[ -n "${VOLUME_SIZE}" ]]; then
+      openstack volume delete ${volumes}
+    fi
   start: openstack server start "${MACHINE_ID}"
   stop: openstack server stop "${MACHINE_ID}"
   status: |
@@ -71,4 +99,3 @@ exec:
           ;;
       esac
     fi
-# binaries: # Optional binaries DevPod should download for this provider
